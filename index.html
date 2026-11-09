@@ -169,6 +169,8 @@ select.inp{min-width:64px;padding:4px 6px}
 .bank{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:2px 12px;font-size:13.5px;background:var(--card2);border-radius:10px;padding:10px 12px;margin-bottom:10px}
 .bank b{display:inline-block;width:18px}
 .bank .z{color:var(--muted);font-size:12px;margin-left:4px}
+.zhblur .zhb{filter:blur(5px);user-select:none;-webkit-user-select:none;cursor:pointer;transition:filter .2s}
+.zhblur .zhb.peek{filter:none}
 .seating{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:auto auto;gap:8px;border:1.5px solid var(--ink);border-radius:6px;padding:10px;max-width:380px;margin:4px 0 10px;font-size:12.5px;line-height:1.35;background:var(--card)}
 .seating div{border:1px solid var(--muted);border-radius:4px;padding:6px}
 .seating .t3{grid-column:3;grid-row:1 / span 2;display:flex;align-items:center}
@@ -487,7 +489,8 @@ function blankInput(key,b,checked,extra){
   if(checked){ const ok=blankOk(b,v); cls=ok?"ok":"bad"; if(!ok) after=`<span class="fixans">→ ${esc(b.show)}</span>`; }
   return `<span class="bn">(${esc(b.b)})</span><input class="inp ${cls}" data-act="blank" data-key="${key}" data-b="${esc(b.b)}" value="${esc(v)}" aria-label="空格 ${esc(b.b)}" autocomplete="off" autocapitalize="off" spellcheck="false" ${extra||""}>${after}`;
 }
-function checkActs(key,label){ const c=S.chk[key]; return `<div class="acts"><button class="btn pri" data-act="check" data-key="${key}">${c?"重新檢查":"檢查答案"}</button><button class="btn" data-act="redo" data-key="${key}">重做</button>${label||""}</div>`; }
+function checkActs(key,label,extra){ const c=S.chk[key]; return `<div class="acts"><button class="btn pri" data-act="check" data-key="${key}">${c?"重新檢查":"檢查答案"}</button><button class="btn" data-act="redo" data-key="${key}">重做</button>${extra||""}${label||""}</div>`; }
+let showVzh=false; // vocab Chinese hints: blurred by default on every visit
 function itemHTML(uid,key,it){
   const c=!!S.chk[key];
   switch(it.type){
@@ -521,10 +524,11 @@ function itemHTML(uid,key,it){
         return `<div class="ln">• ${esc(l.pre)} ${blankInput(key,l,c)} ${esc(l.post||"")}${exp}</div>`; }).join("");
       return `<div class="notes">${lines}</div>${checkActs(key,c?`<span class="score">${ok} / ${bl.length}</span>`:"")}`; }
     case "match": {
-      let ok=0; const bank=`<div class="bank">${it.bank.map(b=>`<div><b>${b[0]}.</b>${esc(b[1])}<span class="z">${esc(b[2])}</span></div>`).join("")}</div>`;
+      let ok=0; const bank=`<div class="bank ${showVzh?"":"zhblur"}">${it.bank.map(b=>`<div><b>${b[0]}.</b>${esc(b[1])}<span class="z zhb">${esc(b[2])}</span></div>`).join("")}</div>`;
       const rows=it.rows.map((r,ri)=>{ const v=S.ans[key+".r"+ri]||""; const good=v===r.ans; if(c&&good) ok++; const bk=it.bank.find(b=>b[0]===r.ans);
-        return `<div class="mrow"><div class="qn">${r.n}.</div><select class="inp ${c?(good?"ok":"bad"):""}" data-act="sel" data-key="${key}" data-r="${ri}" aria-label="第 ${r.n} 題"><option value="">—</option>${it.bank.map(b=>`<option value="${b[0]}" ${v===b[0]?"selected":""}>${b[0]}. ${esc(b[1])}</option>`).join("")}</select><div><div class="w">${esc(r.w)}</div><div class="wz">${esc(r.zh)}${c?`　→ ${good?'<span class="okc">✓</span>':`<span class="badc">✗ 正確：${r.ans}. ${esc(bk?bk[1]:"")}</span>`}${r.tip?"（"+esc(r.tip)+"）":""}`:""}</div></div></div>`; }).join("");
-      return `${bank}<div class="match">${rows}</div>${checkActs(key,c?`<span class="score">${ok} / ${it.rows.length}</span>`:"")}`; }
+        return `<div class="mrow"><div class="qn">${r.n}.</div><select class="inp ${c?(good?"ok":"bad"):""}" data-act="sel" data-key="${key}" data-r="${ri}" aria-label="第 ${r.n} 題"><option value="">—</option>${it.bank.map(b=>`<option value="${b[0]}" ${v===b[0]?"selected":""}>${b[0]}. ${esc(b[1])}</option>`).join("")}</select><div><div class="w">${esc(r.w)}</div><div class="wz"><span class="zhb">${esc(r.zh)}</span>${c?`　→ ${good?'<span class="okc">✓</span>':`<span class="badc">✗ 正確：${r.ans}. ${esc(bk?bk[1]:"")}</span>`}${r.tip?"（"+esc(r.tip)+"）":""}`:""}</div></div></div>`; }).join("");
+      const tg=`<button class="btn" data-act="vzh" aria-pressed="${showVzh}" title="中文提示預設模糊；也可以點單一個中文偷看">${showVzh?"🙈 模糊中文":"👁 顯示中文"}</button>`;
+      return `${bank}<div class="match ${showVzh?"":"zhblur"}">${rows}</div>${checkActs(key,c?`<span class="score">${ok} / ${it.rows.length}</span>`:"",tg)}`; }
     case "errfix": return efHTML();
   }
   return "";
@@ -700,11 +704,13 @@ let toastT=0; function toast(t){ const el=$("#toast"); el.textContent=t; el.clas
 document.addEventListener("click",e=>{
   const g=e.target.closest("[data-go]"); if(g){ e.preventDefault(); go(g.dataset.go); return; }
   const j=e.target.closest("[data-jump]"); if(j){ const [uid,key]=j.dataset.jump.split("|"); go(uid); setTimeout(()=>{ let el=key==="pfd.ef"?$(".part.hot"):$("#q-"+key.replace(/\./g,"-")); if(!el){ const pi=key.split(".")[1]; el=$("#part-"+uid+"-"+pi); } if(el) el.scrollIntoView({block:"center",behavior:"smooth"}); },80); return; }
+  const zb=e.target.closest(".zhblur .zhb"); if(zb){ zb.classList.toggle("peek"); return; }
   const tg=e.target.closest(".evt"); if(tg){ const key=tg.dataset.k; if(narrow()) setTab("q"); setTimeout(()=>{ let el=key==="pfd.ef"?$(".part.hot"):$("#q-"+key.replace(/\./g,"-")); if(!el){ const pp=key.split("."); el=$("#part-"+pp[0]+"-"+pp[1]); } if(el){ el.scrollIntoView({block:"center",behavior:"smooth"}); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); } },60); return; }
   const s=e.target.closest(".s"); if(s){ const u=U[cur]; const f=u.flat[+s.dataset.i]; playFrom(f.t-0.12,null); return; }
   const a=e.target.closest("[data-act]"); if(!a) return;
   const act=a.dataset.act;
   if(act==="mc"){ const key=a.dataset.key; if(S.ans[key]!=null) return; S.ans[key]=+a.dataset.oi; save(); const [uid,pi]=key.split("."); rerenderPart(uid,+pi); }
+  else if(act==="vzh"){ showVzh=!showVzh; Q[cur]&&Q[cur].parts.forEach((p,pi)=>{ if(p.items.some(it=>it.type==="match")) rerenderPart(cur,pi); }); }
   else if(act==="redopart"){ const uid=a.dataset.uid, pi=+a.dataset.pi; Q[uid].parts[pi].items.forEach((it,ii)=>{ const k=uid+"."+pi+"."+ii; delete S.ans[k]; }); save(); rerenderPart(uid,pi); }
   else if(act==="check"){ const key=a.dataset.key; S.chk[key]=true; save(); const [uid,pi]=key.split("."); rerenderPart(uid,+pi); }
   else if(act==="redo"){ const key=a.dataset.key; delete S.chk[key]; Object.keys(S.ans).forEach(k=>{ if(k.startsWith(key+".")) delete S.ans[k]; }); save(); const [uid,pi]=key.split("."); rerenderPart(uid,+pi); }
